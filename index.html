@@ -80,14 +80,13 @@
             background-color: var(--primary-dark);
         }
         .btn-small {
-            padding: 6px 8px;
-            font-size: 0.8rem;
+            padding: 6px 10px;
+            font-size: 0.85rem;
             width: auto;
             margin-top: 4px;
         }
-        .btn-danger { background-color: #ef4444; color: white; }
+        .btn-danger { background-color: #ef4444; color: white; padding: 6px 10px; font-size: 0.8rem; border-radius: 4px; border: none; cursor: pointer;}
         .btn-success { background-color: #10b981; color: white; }
-        .btn-secondary { background-color: #4b5563; color: white; }
         
         .section-title {
             font-size: 1.1rem;
@@ -101,42 +100,50 @@
 
         .grid-header {
             display: grid;
-            grid-template-columns: 65px 1fr 80px 75px;
+            grid-template-columns: 24px 65px 1fr 80px 40px;
             gap: 4px;
             font-size: 0.75rem;
             font-weight: 600;
             color: var(--text-muted);
             margin-bottom: 6px;
             text-align: center;
+            align-items: center;
         }
         .grid-header .col-name { text-align: left; padding-left: 4px; }
 
         .row-item {
             display: grid;
-            grid-template-columns: 65px 1fr 80px 75px;
+            grid-template-columns: 24px 65px 1fr 80px 40px;
             gap: 4px;
             margin-bottom: 8px;
             align-items: center;
+            background: rgba(255,255,255,0.02);
+            padding: 4px 0;
+            border-radius: 6px;
+            touch-action: none; /* Crucial para que el gesto táctil arrastre bien en iPhone */
         }
+        .row-item.dragging {
+            opacity: 0.4;
+            background: var(--primary-dark);
+        }
+
+        .drag-handle {
+            color: var(--text-muted);
+            font-size: 1.1rem;
+            text-align: center;
+            cursor: grab;
+            user-select: none;
+        }
+        .drag-handle:active {
+            cursor: grabbing;
+        }
+
         .row-item input {
             text-align: center;
             padding: 8px 4px;
         }
         .row-item input.input-name {
             text-align: left;
-        }
-
-        .row-actions {
-            display: flex;
-            gap: 2px;
-            justify-content: center;
-        }
-        .row-actions button {
-            padding: 4px 6px;
-            font-size: 0.75rem;
-            border-radius: 4px;
-            border: none;
-            cursor: pointer;
         }
 
         .recipe-item {
@@ -181,13 +188,14 @@
         </div>
         
         <div class="grid-header">
+            <div></div>
             <div>%</div>
             <div class="col-name">Tipo de Harina</div>
             <div>Gramos</div>
-            <div>Acciones</div>
+            <div></div>
         </div>
 
-        <div id="contenedor-harinas">
+        <div id="contenedor-harinas" class="sortable-container">
             <!-- Se inyectan por JS -->
         </div>
 
@@ -201,13 +209,14 @@
         </div>
         
         <div class="grid-header">
+            <div></div>
             <div>%</div>
             <div class="col-name">Ingrediente</div>
             <div>Gramos</div>
-            <div>Acciones</div>
+            <div></div>
         </div>
 
-        <div id="contenedor-ingredientes">
+        <div id="contenedor-ingredientes" class="sortable-container">
             <!-- Se inyectan por JS -->
         </div>
 
@@ -273,15 +282,13 @@
         let div = document.createElement('div');
         div.className = 'row-item harina-row';
         div.innerHTML = `
+            <div class="drag-handle" title="Arrastrar para ordenar">☰</div>
             <input type="number" step="any" placeholder="%" value="${porc}" oninput="calcularDesdeHarinas()">
             <input type="text" class="input-name" placeholder="Tipo" value="${nombre}">
             <input type="number" step="any" placeholder="g" value="${gramos}" oninput="calcularDesdeGramosHarina(this)">
-            <div class="row-actions">
-                <button class="btn-secondary" onclick="moverFila(this, -1)" title="Subir">▲</button>
-                <button class="btn-secondary" onclick="moverFila(this, 1)" title="Bajar">▼</button>
-                <button class="btn-danger" onclick="this.closest('.row-item').remove(); recalcularTodo();" title="Borrar">✕</button>
-            </div>
+            <button class="btn-danger" onclick="this.closest('.row-item').remove(); recalcularTodo();" title="Borrar">✕</button>
         `;
+        activarArrastre(div);
         contenedor.appendChild(div);
     }
 
@@ -290,28 +297,68 @@
         let div = document.createElement('div');
         div.className = 'row-item ingrediente-row';
         div.innerHTML = `
+            <div class="drag-handle" title="Arrastrar para ordenar">☰</div>
             <input type="number" step="any" placeholder="%" value="${porc}" oninput="calcularDesdePorcIngrediente(this)">
             <input type="text" class="input-name" placeholder="Nombre" value="${nombre}">
             <input type="number" step="any" placeholder="g" value="${gramos}" oninput="calcularDesdeGramosIngrediente(this)">
-            <div class="row-actions">
-                <button class="btn-secondary" onclick="moverFila(this, -1)" title="Subir">▲</button>
-                <button class="btn-secondary" onclick="moverFila(this, 1)" title="Bajar">▼</button>
-                <button class="btn-danger" onclick="this.closest('.row-item').remove(); recalcularTodo();" title="Borrar">✕</button>
-            </div>
+            <button class="btn-danger" onclick="this.closest('.row-item').remove(); recalcularTodo();" title="Borrar">✕</button>
         `;
+        activarArrastre(div);
         contenedor.appendChild(div);
     }
 
-    // Función para mover una fila hacia arriba o hacia abajo manteniendo los valores actuales
-    function moverFila(btn, direccion) {
-        let filaActual = btn.closest('.row-item');
-        let contenedor = filaActual.parentElement;
+    // Lógica liviana de Drag and Drop táctil y de escritorio compatible con iPhone
+    function activarArrastre(elemento) {
+        let handle = elemento.querySelector('.drag-handle');
         
-        if (direccion === -1 && filaActual.previousElementSibling) {
-            contenedor.insertBefore(filaActual, filaActual.previousElementSibling);
-        } else if (direccion === 1 && filaActual.nextElementSibling) {
-            contenedor.insertBefore(filaActual.nextElementSibling, filaActual);
-        }
+        handle.addEventListener('pointerdown', (e) => {
+            e.preventDefault();
+            let contenedor = elemento.parentElement;
+            let yInicial = e.clientY;
+            let rectOriginal = elemento.getBoundingClientRect();
+            
+            elemento.classList.add('dragging');
+            elemento.style.position = 'relative';
+            elemento.style.zIndex = '100';
+
+            function onPointerMove(eMove) {
+                let deltaY = eMove.clientY - yInicial;
+                elemento.style.transform = `translateY(${deltaY}px)`;
+
+                // Encontrar elemento hermano sobre el cual posicionarse
+                let hermanos = [...contenedor.querySelectorAll('.row-item:not(.dragging)')];
+                let hermanoDestino = hermanos.reduce((masCercano, hermano) => {
+                    let box = hermano.getBoundingClientRect();
+                    let offset = eMove.clientY - box.top - box.height / 2;
+                    if (offset < 0 && offset > masCercano.offset) {
+                        return { offset: offset, element: hermano };
+                    } else {
+                        return masCercano;
+                    }
+                }, { offset: -Number.MAX_VALUE, element: null }).element;
+
+                if (hermanoDestino) {
+                    if (eMove.clientY < hermanoDestino.getBoundingClientRect().top + hermanoDestino.offsetHeight / 2) {
+                        contenedor.insertBefore(elemento, hermanoDestino);
+                    } else {
+                        contenedor.insertBefore(elemento, hermanoDestino.nextElementSibling);
+                    }
+                }
+            }
+
+            function onPointerUp() {
+                window.removeEventListener('pointermove', onPointerMove);
+                window.removeEventListener('pointerup', onPointerUp);
+                
+                elemento.classList.remove('dragging');
+                elemento.style.transform = '';
+                elemento.style.position = '';
+                elemento.style.zIndex = '';
+            }
+
+            window.addEventListener('pointermove', onPointerMove);
+            window.addEventListener('pointerup', onPointerUp);
+        });
     }
 
     function obtenerTotalHarinaGramos() {
@@ -390,7 +437,7 @@
 
     function calcularDesdePorcIngrediente(inputEl) {
         if(bloqueandoCalculo) return;
-        let fila = inputEl.parentElement;
+        let fila = inputEl.closest('.row-item');
         let inputs = fila.querySelectorAll('input');
         let porc = parseFloat(inputs[0].value) || 0;
         let totalHarina = obtenerTotalHarinaGramos();
@@ -402,7 +449,7 @@
 
     function calcularDesdeGramosIngrediente(inputEl) {
         if(bloqueandoCalculo) return;
-        let fila = inputEl.parentElement;
+        let fila = inputEl.closest('.row-item');
         let inputs = fila.querySelectorAll('input');
         let gramos = parseFloat(inputs[2].value) || 0;
         let totalHarina = obtenerTotalHarinaGramos();
@@ -450,7 +497,7 @@
 
         let receta = { nombre, harinas, ingredientes };
 
-        let recetas = JSON.parse(localStorage.getItem('mis_recetas_pan_v6') || '[]');
+        let recetas = JSON.parse(localStorage.getItem('mis_recetas_pan_v7') || '[]');
         let index = recetas.findIndex(r => r.nombre === nombre);
         if(index >= 0) {
             recetas[index] = receta;
@@ -458,7 +505,7 @@
             recetas.push(receta);
         }
 
-        localStorage.setItem('mis_recetas_pan_v6', JSON.stringify(recetas));
+        localStorage.setItem('mis_recetas_pan_v7', JSON.stringify(recetas));
         document.getElementById('nombreReceta').value = '';
         cargarRecetasGuardadas();
         alert("¡Receta guardada con éxito!");
@@ -466,7 +513,7 @@
 
     function cargarRecetasGuardadas() {
         let contenedor = document.getElementById('lista-recetas');
-        let recetas = JSON.parse(localStorage.getItem('mis_recetas_pan_v6') || '[]');
+        let recetas = JSON.parse(localStorage.getItem('mis_recetas_pan_v7') || '[]');
 
         if(recetas.length === 0) {
             contenedor.innerHTML = `<p style="font-size:0.85rem; color:var(--text-muted);">No hay recetas guardadas aún.</p>`;
@@ -492,7 +539,7 @@
     }
 
     function cargarReceta(idx) {
-        let recetas = JSON.parse(localStorage.getItem('mis_recetas_pan_v6') || '[]');
+        let recetas = JSON.parse(localStorage.getItem('mis_recetas_pan_v7') || '[]');
         let r = recetas[idx];
         if(r) {
             document.getElementById('nombreReceta').value = r.nombre;
@@ -504,9 +551,9 @@
 
     function eliminarReceta(idx) {
         if(confirm("¿Seguro que querés borrar esta receta?")) {
-            let recetas = JSON.parse(localStorage.getItem('mis_recetas_pan_v6') || '[]');
+            let recetas = JSON.parse(localStorage.getItem('mis_recetas_pan_v7') || '[]');
             recetas.splice(idx, 1);
-            localStorage.setItem('mis_recetas_pan_v6', JSON.stringify(recetas));
+            localStorage.setItem('mis_recetas_pan_v7', JSON.stringify(recetas));
             cargarRecetasGuardadas();
         }
     }
